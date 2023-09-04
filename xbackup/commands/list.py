@@ -5,6 +5,7 @@ from errno import EIO
 from errno import ENOENT
 from errno import ENOEXEC
 import os
+from typing import List
 from typing import Optional
 from typing import Sequence
 
@@ -55,15 +56,19 @@ def run_cmd(cmds: commands) -> int:
 
     desc = backup_description.load(backup_file)
     for item in desc.checklist:
-        line = [f"{item.name}:"]
-        if item.islink:
-            line.append("L")
-        if item.isdir:
-            line.append("D")
+        line: List[str] = [f"{item.name}:"]
+        line.append(("d" if item.isdir else "f" if item.isfile else "-") +
+                    ("l" if item.islink else "-"))
+
         if item.isfile:
-            line.append("F")
             assert isinstance(item.md5, str)
+            line.append(str(item.size))
             line.append(item.md5)
+
+        if item.islink:
+            assert isinstance(item.linkname, str)
+            line.append(item.linkname)
+
         cmds.stdout(" ".join(line))
 
     backup_file.close()
