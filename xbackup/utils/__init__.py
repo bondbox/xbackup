@@ -18,7 +18,7 @@ from .package import DEFAULT_COMPRESS_TYPE
 from .package import backup_tarfile
 from .scanner import backup_scanner
 
-__version__ = "0.1.alpha.1"
+__version__ = "0.1.alpha.2"
 __prog__ = "xbackup"
 __prog_check__ = f"{__prog__}-check"
 __prog_desc__ = f"{__prog__}-desc"
@@ -64,19 +64,19 @@ def backup_pack(scanner: backup_scanner,
 
         desc = backup_description()
 
-        # save backup object to tarfile
+        # archive backup object
         for object in scanner:
             cmds.logger.debug(f"{object.relpath}: {object.abspath}")
             backup_temp.add(object.abspath, object.relpath)
             desc.checklist.add_object(object)
 
-        # save backup checklist
+        # create backup checklist
         checklist_path = os.path.join(tempdir, "checklist")
         with open(checklist_path, "wb") as tempfd:
             # dump check item to temp
             desc.checklist.dump(tempfd)
 
-        # save backup description
+        # create backup description
         description_path = os.path.join(tempdir, "description")
         with open(description_path, "w") as tempfd:
             tempfd.write(desc.dump())
