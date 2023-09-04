@@ -8,7 +8,6 @@ import os
 from typing import Optional
 from typing import Sequence
 
-from humanize import naturalsize
 from xarg import add_command
 from xarg import argp
 from xarg import commands
@@ -54,8 +53,7 @@ def run_cmd(cmds: commands) -> int:
     cmds.stdout("check ok")
 
     desc = backup_description.load(backup_file)
-    cmds.stdout(desc.dump().strip())
-    cmds.stdout(f"size: {naturalsize(desc.checklist.counter.sizes, gnu=True)}")
+    cmds.stdout(desc)
 
     backup_file.close()
     return 0

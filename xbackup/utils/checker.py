@@ -4,6 +4,7 @@
 import enum
 import os
 import pickle
+from typing import Dict
 from typing import IO
 from typing import List
 from typing import Optional
@@ -161,6 +162,21 @@ class backup_check_list:
         @property
         def links(self) -> int:
             return self.__links
+
+        ITEM = "items"
+        SIZE = "sizes"
+        DIR = "dirs"
+        FILE = "files"
+        LINK = "links"
+
+        def dump_dict(self) -> Dict:
+            return {
+                self.ITEM: self.items,
+                self.SIZE: self.sizes,
+                self.DIR: self.dirs,
+                self.FILE: self.files,
+                self.LINK: self.links,
+            }
 
         def inc(self, item):
             assert isinstance(item, backup_check_item)
