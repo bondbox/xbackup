@@ -82,7 +82,7 @@ class backup_description:
         return yaml.dump(self.data, default_flow_style=False, sort_keys=False)
 
     @classmethod
-    def from_file(cls, backup_file: backup_tarfile):
+    def load(cls, backup_file: backup_tarfile):
         checklist = backup_file.checklist
         description = backup_file.description
         assert checklist is not None
@@ -92,4 +92,4 @@ class backup_description:
         start = data["backup time"]["start"]
         finish = data["backup time"]["finish"]
         return backup_description(backup_description.btime(start, finish),
-                                  backup_check_list.from_file(checklist))
+                                  backup_check_list.load(checklist))

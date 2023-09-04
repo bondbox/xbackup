@@ -53,9 +53,9 @@ def run_cmd(cmds: commands) -> int:
 
     cmds.stdout("check ok")
 
-    desc = backup_description.from_file(backup_file)
+    desc = backup_description.load(backup_file)
     for item in desc.checklist:
-        line = [f"{item.relpath}:"]
+        line = [f"{item.name}:"]
         if item.islink:
             line.append("L")
         if item.isdir:

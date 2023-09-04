@@ -70,19 +70,18 @@ def backup_pack(scanner: backup_scanner,
             backup_temp.add(object.abspath, object.relpath)
             desc.checklist.add_object(object)
 
-        # save backup checklist to temp file
+        # save backup checklist
         checklist_path = os.path.join(tempdir, "checklist")
-        with open(checklist_path, "w") as tempfd:
-            # write object check info to temp
-            for check_item in desc.checklist:
-                tempfd.write(f"{check_item}\n")
+        with open(checklist_path, "wb") as tempfd:
+            # dump check item to temp
+            desc.checklist.dump(tempfd)
 
-        # save backup description to temp file
+        # save backup description
         description_path = os.path.join(tempdir, "description")
         with open(description_path, "w") as tempfd:
             tempfd.write(desc.dump())
 
-        # save temp files to tarfile and close tarfile
+        # archive temp files and close tarfile
         backup_temp.description = description_path
         backup_temp.checklist = checklist_path
         backup_temp.close()

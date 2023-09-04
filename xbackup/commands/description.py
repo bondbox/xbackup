@@ -53,7 +53,7 @@ def run_cmd(cmds: commands) -> int:
 
     cmds.stdout("check ok")
 
-    desc = backup_description.from_file(backup_file)
+    desc = backup_description.load(backup_file)
     cmds.stdout(desc.dump().strip())
     cmds.stdout(f"size: {naturalsize(desc.checklist.counter.sizes, gnu=True)}")
 

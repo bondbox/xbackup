@@ -1,13 +1,14 @@
 #!/usr/bin/python3
 # coding:utf-8
 
-from base64 import b64decode
-from base64 import b64encode
 import enum
 import os
+import pickle
 from typing import IO
 from typing import List
 from typing import Optional
+from typing import Sequence
+from typing import Tuple
 
 from xarg import commands
 
@@ -15,7 +16,7 @@ from .package import backup_tarfile
 from .scanner import backup_scanner
 
 
-class backup_check_list:
+class backup_check_item:
 
     @enum.unique
     class item_flag(enum.IntFlag):
@@ -24,88 +25,107 @@ class backup_check_list:
         isfile = 1 << 1
         islink = 1 << 2
 
-    class item:
+    def __init__(self, name: str, size: int, isdir: bool, isfile: bool,
+                 islink: bool, md5: Optional[str], linkname: Optional[str]):
+        assert isinstance(name, str)
+        assert isinstance(size, int)
+        assert isinstance(isdir, bool)
+        assert isinstance(isfile, bool)
+        assert isinstance(islink, bool)
 
-        def __init__(self, relpath: str, size: int, isdir: bool, isfile: bool,
-                     islink: bool, md5: Optional[str],
-                     linkname: Optional[str]):
-            assert isinstance(relpath, str)
-            assert isinstance(size, int)
-            assert isinstance(isdir, bool)
-            assert isinstance(isfile, bool)
-            assert isinstance(islink, bool)
-            assert (isdir and not isfile) or (not isdir and isfile)
-            assert isinstance(md5, str) if isfile else md5 is None
-            assert isinstance(linkname, str) if islink else linkname is None
-            self.__relpath = relpath
-            self.__size = size
-            self.__isdir = isdir
-            self.__isfile = isfile
-            self.__islink = islink
-            self.__md5 = md5
-            self.__linkname = linkname
+        flag = self.item_flag.none
 
-        def __str__(self):
-            flags = backup_check_list.item_flag.none
+        if isdir:
+            assert size == 0 and not isfile
+            flag |= self.item_flag.isdir
 
-            if self.isdir:
-                flags |= backup_check_list.item_flag.isdir
+        if isfile:
+            assert size >= 0 and not isdir and isinstance(md5, str)
+            flag |= self.item_flag.isfile
+        else:
+            assert md5 is None
 
-            if self.isfile:
-                assert self.size >= 0 and isinstance(self.md5, str)
-                flags |= backup_check_list.item_flag.isfile
+        if islink:
+            assert isinstance(self.linkname, str)
+            flag |= self.item_flag.islink
+        else:
+            assert linkname is None
 
-            if self.islink:
-                assert isinstance(self.linkname, str)
-                flags |= backup_check_list.item_flag.islink
+        self.__name = name
+        self.__size = size
+        self.__flag = flag
+        self.__md5 = md5
+        self.__linkname = linkname
 
-            line = [str(flags.value)]
+    def __str__(self):
+        return " ".join([str(i) for i in self.dump()])
 
-            if isinstance(self.md5, str):
-                assert self.isfile
-                line.append(self.md5)
-                line.append(str(self.size))
+    @property
+    def name(self) -> str:
+        return self.__name
 
-            def __encode(s: str) -> str:
-                return b64encode(s.encode()).decode()
+    @property
+    def size(self) -> int:
+        return self.__size
 
-            # The path and linkname must be base64 encoded to support
-            # invisible characters such as blank space.
+    @property
+    def flag(self) -> item_flag:
+        return self.__flag
 
-            if isinstance(self.linkname, str):
-                assert self.islink
-                line.append(__encode(self.linkname))
+    @property
+    def isdir(self) -> bool:
+        return self.item_flag.isdir in self.__flag
 
-            line.append(__encode(self.relpath))
-            return " ".join(line)
+    @property
+    def isfile(self) -> bool:
+        return self.item_flag.isfile in self.__flag
 
-        @property
-        def relpath(self) -> str:
-            return self.__relpath
+    @property
+    def islink(self) -> bool:
+        return self.item_flag.islink in self.__flag
 
-        @property
-        def size(self) -> int:
-            return self.__size
+    @property
+    def md5(self) -> Optional[str]:
+        return self.__md5
 
-        @property
-        def isdir(self) -> bool:
-            return self.__isdir
+    @property
+    def linkname(self) -> Optional[str]:
+        return self.__linkname
 
-        @property
-        def isfile(self) -> bool:
-            return self.__isfile
+    def dump(self) -> Tuple:
+        data = [self.name, int(self.flag)]
 
-        @property
-        def islink(self) -> bool:
-            return self.__islink
+        if self.isfile:
+            data.extend([self.size, self.md5])
 
-        @property
-        def md5(self) -> Optional[str]:
-            return self.__md5
+        if self.islink:
+            data.append(self.linkname)
 
-        @property
-        def linkname(self) -> Optional[str]:
-            return self.__linkname
+        return tuple(data)
+
+    @classmethod
+    def load(cls, data: Sequence):
+        data = list(data)
+        name = data.pop(0)
+        flag = data.pop(0)
+        assert isinstance(flag, int)
+        isdir = True if flag & backup_check_item.item_flag.isdir else False
+        isfile = True if flag & backup_check_item.item_flag.isfile else False
+        islink = True if flag & backup_check_item.item_flag.islink else False
+        size = data.pop(0) if isfile else 0
+        md5 = data.pop(0) if isfile else None
+        linkname = data.pop(0) if islink else None
+
+        return backup_check_item(name=name,
+                                 size=size,
+                                 isdir=isdir,
+                                 isfile=isfile,
+                                 islink=islink,
+                                 md5=md5,
+                                 linkname=linkname)
+
+
+class backup_check_list:
 
     class item_counter:
 
@@ -143,7 +163,7 @@ class backup_check_list:
             return self.__links
 
         def inc(self, item):
-            assert isinstance(item, backup_check_list.item)
+            assert isinstance(item, backup_check_item)
             self.__sizes += item.size
             self.__items += 1
 
@@ -157,7 +177,7 @@ class backup_check_list:
                 self.__links += 1
 
     def __init__(self):
-        self.__items: List[backup_check_list.item] = []
+        self.__items: List[backup_check_item] = []
         self.__counter = self.item_counter()
 
     def __iter__(self):
@@ -167,126 +187,111 @@ class backup_check_list:
     def counter(self) -> item_counter:
         return self.__counter
 
-    def add(self, item: item):
-        assert isinstance(item, self.item)
+    def add(self, item: backup_check_item):
+        assert isinstance(item, backup_check_item)
         self.__items.append(item)
         self.counter.inc(item)
 
-    def add_line(self, line: str):
-
-        def __decode(s: str) -> str:
-            return b64decode(s.encode()).decode()
-
-        assert isinstance(line, str)
-        items = line.strip().split()
-        flags = int(items.pop(0))
-        isdir = True if flags & backup_check_list.item_flag.isdir else False
-        isfile = True if flags & backup_check_list.item_flag.isfile else False
-        islink = True if flags & backup_check_list.item_flag.islink else False
-        md5 = items.pop(0) if isfile else None
-        size = int(items.pop(0)) if isfile else 0
-        linkname = __decode(items.pop(0)) if islink else None
-        relpath = __decode(items.pop(0))
-        assert len(items) == 0
-        item = self.item(relpath, size, isdir, isfile, islink, md5, linkname)
-        self.add(item)
-
     def add_object(self, object: backup_scanner.object):
         assert isinstance(object, backup_scanner.object)
-        item = self.item(
+        item = backup_check_item(
             object.relpath, object.size, object.isdir, object.isfile,
             object.islink, object.md5 if object.isfile else None,
             os.readlink(object.abspath) if object.islink else None)
         self.add(item)
 
+    def dump(self, file: IO[bytes]):
+        pickle.dump(obj=[item.dump() for item in self.__items], file=file)
+
     @classmethod
-    def from_file(cls, fd: IO[bytes]):
+    def load(cls, file: IO[bytes]):
         check_list = backup_check_list()
-        for line in fd.readlines():
-            check_list.add_line(line.decode())
+        for data in pickle.load(file=file):
+            assert isinstance(data, tuple)
+            check_list.add(backup_check_item.load(data))
         return check_list
 
 
 def backup_check_file(tarfile: backup_tarfile) -> bool:
     assert isinstance(tarfile, backup_tarfile)
     assert tarfile.readonly
-
-    cmds = commands()
     checklist = tarfile.checklist
     assert checklist is not None
-    check_list = backup_check_list.from_file(checklist)
-    for item in check_list:
+
+    chklist = backup_check_list.load(checklist)
+    assert isinstance(chklist, backup_check_list)
+
+    cmds = commands()
+    for item in chklist:
         cmds.logger.debug(f"{item}")
 
-    def check_file(item: backup_check_list.item,
-                   tarfile: backup_tarfile) -> bool:
-        assert isinstance(item, backup_check_list.item)
+    def check_file(item: backup_check_item, tarfile: backup_tarfile) -> bool:
+        assert isinstance(item, backup_check_item)
         assert isinstance(tarfile, backup_tarfile)
 
-        md5 = tarfile.file_md5(item.relpath)
+        md5 = tarfile.file_md5(item.name)
         if md5 == item.md5:
             return True
 
-        cmds.logger.debug(f"Check {item.relpath} md5 is {md5}, "
+        cmds.logger.debug(f"Check {item.name} md5 is {md5}, "
                           f"expected {item.md5}.")
         return False
 
-    def check_item(item: backup_check_list.item,
-                   tarfile: backup_tarfile) -> bool:
-        assert isinstance(item, backup_check_list.item)
+    def check_item(item: backup_check_item, tarfile: backup_tarfile) -> bool:
+        assert isinstance(item, backup_check_item)
         assert isinstance(tarfile, backup_tarfile)
-        member = tarfile.getmember(item.relpath)
+        member = tarfile.getmember(item.name)
 
         if member.isdir() and item.isdir != member.isdir():
-            cmds.logger.error(f"Check {item.relpath} isdir failed.")
+            cmds.logger.error(f"Check {item.name} isdir failed.")
             return False
 
         if member.isfile():
             if item.isfile != member.isfile():
-                cmds.logger.error(f"Check {item.relpath} isfile failed.")
+                cmds.logger.error(f"Check {item.name} isfile failed.")
                 return False
 
             if check_file(item, tarfile) is not True:
-                cmds.logger.error(f"Check {item.relpath} file md5 failed.")
+                cmds.logger.error(f"Check {item.name} file md5 failed.")
                 return False
 
         if member.issym():
             if item.islink != member.issym():
-                cmds.logger.error(f"Check {item.relpath} islink failed.")
+                cmds.logger.error(f"Check {item.name} islink failed.")
                 return False
 
             # check symbolic link
             if item.linkname != member.linkname:
                 cmds.logger.debug(
-                    f"Check {item.relpath} linkname is {member.linkname}, "
+                    f"Check {item.name} linkname is {member.linkname}, "
                     f"expected {item.linkname}.")
-                cmds.logger.error(f"Check {item.relpath} linkname failed.")
+                cmds.logger.error(f"Check {item.name} linkname failed.")
                 return False
 
         # if member.islnk():
-        #     cmds.logger.error(f"Check {item.relpath} hard link failed.")
+        #     cmds.logger.error(f"Check {item.name} hard link failed.")
         #     return False
 
         # if member.isdev():
-        #     cmds.logger.error(f"Check {item.relpath} device failed.")
+        #     cmds.logger.error(f"Check {item.name} device failed.")
         #     return False
 
         # if member.isreg():
-        #     cmds.logger.error(f"Check {item.relpath} regular file failed.")
+        #     cmds.logger.error(f"Check {item.name} regular file failed.")
         #     return False
 
         # if member.chksum:
-        #     cmds.logger.error(f"Check {item.relpath} regular file failed.")
+        #     cmds.logger.error(f"Check {item.name} regular file failed.")
         #     return False
 
-        cmds.logger.debug(f"Check {item.relpath} ok.")
+        cmds.logger.debug(f"Check {item.name} ok.")
         return True
 
-    members = tarfile.members
-    if set([i.relpath for i in check_list]) - set([m.name for m in members]):
+    if set([i.name for i in chklist]) - set([m.name for m in tarfile.members]):
+        cmds.logger.error("Check members failed.")
         return False
 
-    for item in check_list:
+    for item in chklist:
         if check_item(item, tarfile) is not True:
             return False
 
