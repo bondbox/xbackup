@@ -21,7 +21,7 @@ from .definer import DEFAULT_COMPRESS_TYPE
 from .package import backup_tarfile
 from .scanner import backup_scanner
 
-__version__ = "0.1.alpha.2"
+__version__ = "0.1.alpha.3"
 __prog__ = "xbackup"
 __prog_check__ = f"{__prog__}-check"
 __prog_desc__ = f"{__prog__}-desc"
