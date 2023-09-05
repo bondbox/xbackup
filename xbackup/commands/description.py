@@ -23,6 +23,10 @@ from ..utils import backup_tarfile
 
 @add_command(__prog_desc__)
 def add_cmd(_arg: argp):
+    _arg.add_argument("--no-check",
+                      action="store_true",
+                      dest="_backup_check_off_",
+                      help="Do not check the backup file")
     _arg.add_argument("_backup_path_",
                       type=str,
                       nargs="?",
@@ -45,12 +49,11 @@ def run_cmd(cmds: commands) -> int:
     backup_file = backup_tarfile(backup_path, True)
     assert backup_file.readonly
 
-    if not backup_check_pack(backup_file):
+    check = not cmds.args._backup_check_off_
+    if check and backup_check_pack(backup_file) is not True:
         cmds.stdout("check error")
         backup_file.close()
         return EIO
-
-    cmds.stdout("check ok")
 
     desc = backup_description.load(backup_file)
     cmds.stdout(desc)

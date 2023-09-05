@@ -6,6 +6,7 @@ import os
 from typing import Dict
 from typing import Optional
 
+from humanize import naturaldelta
 from humanize import naturalsize
 import yaml
 
@@ -15,7 +16,7 @@ from .package import backup_tarfile
 
 class backup_description:
 
-    VERSION = 1
+    DESC_VERSION = 1
 
     class btime:
 
@@ -57,6 +58,7 @@ class backup_description:
         def finish_isoformat(self) -> str:
             return self.finish.isoformat()
 
+        DELTA = "delta"
         START = "start"
         FINISH = "finish"
 
@@ -91,6 +93,9 @@ class backup_description:
     def __str__(self):
         strdata = self.data
         strdata[self.BAKTIME] = {
+            backup_description.btime.DELTA:
+            naturaldelta(
+                (self.timestamp.finish - self.timestamp.start).seconds),
             backup_description.btime.START:
             self.timestamp.start.strftime("%Y-%m-%d %a %X.%f"),
             backup_description.btime.FINISH:
@@ -128,7 +133,7 @@ class backup_description:
     @property
     def data(self) -> Dict:
         return {
-            self.VERSION: self.VERSION,
+            self.VERSION: self.DESC_VERSION,
             self.BAKTIME: self.timestamp.dump_dict(),
             self.CHKLIST: {
                 self.COUNTER: self.checklist.counter.dump_dict()
