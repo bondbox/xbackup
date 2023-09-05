@@ -56,17 +56,16 @@ def run_cmd(cmds: commands) -> int:
     desc = backup_description.load(backup_file)
     for item in desc.checklist:
         line: List[str] = [f"{item.name}:"]
-        line.append(("d" if item.isdir else "f" if item.isfile else "-") +
-                    ("l" if item.islink else "-"))
-
-        if item.isfile:
-            assert isinstance(item.md5, str)
-            line.append(str(item.size))
-            line.append(item.md5)
+        line.append("l" if item.islink else "d" if item.isdir else "f" if item.
+                    isfile else "-")
 
         if item.islink:
             assert isinstance(item.linkname, str)
             line.append(item.linkname)
+        elif item.isfile:
+            assert isinstance(item.md5, str)
+            line.append(str(item.size))
+            line.append(item.md5)
 
         cmds.stdout(" ".join(line))
 
