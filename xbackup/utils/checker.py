@@ -2,7 +2,6 @@
 # coding:utf-8
 
 import enum
-import os
 import pickle
 from typing import Dict
 from typing import IO
@@ -14,7 +13,6 @@ from typing import Tuple
 from xarg import commands
 
 from .package import backup_tarfile
-from .scanner import backup_scanner
 
 
 class backup_check_item:
@@ -41,10 +39,9 @@ class backup_check_item:
             flag |= self.item_flag.isdir
 
         if isfile:
-            assert size >= 0 and not isdir and isinstance(md5, str)
+            assert size >= 0 and not isdir
+            assert md5 is None if islink else isinstance(md5, str)
             flag |= self.item_flag.isfile
-        else:
-            assert md5 is None
 
         if islink:
             assert isinstance(linkname, str)
@@ -96,11 +93,10 @@ class backup_check_item:
     def dump(self) -> Tuple:
         data = [self.name, int(self.flag)]
 
-        if self.isfile:
-            data.extend([self.size, self.md5])
-
         if self.islink:
             data.append(self.linkname)
+        elif self.isfile:
+            data.extend([self.size, self.md5])
 
         return tuple(data)
 
@@ -113,8 +109,8 @@ class backup_check_item:
         isdir = True if flag & backup_check_item.item_flag.isdir else False
         isfile = True if flag & backup_check_item.item_flag.isfile else False
         islink = True if flag & backup_check_item.item_flag.islink else False
-        size = data.pop(0) if isfile else 0
-        md5 = data.pop(0) if isfile else None
+        size = data.pop(0) if isfile and not islink else 0
+        md5 = data.pop(0) if isfile and not islink else None
         linkname = data.pop(0) if islink else None
 
         return backup_check_item(name=name,
@@ -208,14 +204,6 @@ class backup_check_list:
         self.__items.add(item)
         self.counter.inc(item)
 
-    def add_object(self, object: backup_scanner.object):
-        assert isinstance(object, backup_scanner.object)
-        item = backup_check_item(
-            object.relpath, object.size, object.isdir, object.isfile,
-            object.islink, object.md5 if object.isfile else None,
-            os.readlink(object.abspath) if object.islink else None)
-        self.add(item)
-
     def dump(self, file: IO[bytes]):
         pickle.dump(obj=[item.dump() for item in self.__items], file=file)
 
@@ -228,7 +216,7 @@ class backup_check_list:
         return check_list
 
 
-def backup_check_file(tarfile: backup_tarfile) -> bool:
+def backup_check_pack(tarfile: backup_tarfile) -> bool:
     assert isinstance(tarfile, backup_tarfile)
     assert tarfile.readonly
     checklist = tarfile.checklist

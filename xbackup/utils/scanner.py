@@ -80,7 +80,7 @@ class backup_scanner:
             return self.__hash(sha256())
 
         def __hash(self, hash) -> Optional[str]:
-            if not self.isfile:
+            if not self.isfile or self.islink:
                 return None
 
             with open(self.abspath, "rb") as f:

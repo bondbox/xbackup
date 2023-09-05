@@ -4,15 +4,18 @@
 from errno import EAGAIN
 from errno import EBUSY
 from errno import ENOENT
+import hashlib
 import os
 import shutil
+from tempfile import NamedTemporaryFile
 from tempfile import TemporaryDirectory
 from typing import Optional
 
 from xarg import commands
 
 from .abstract import backup_description
-from .checker import backup_check_file
+from .checker import backup_check_item
+from .checker import backup_check_pack
 from .definer import COMPRESS_TYPE
 from .definer import DEFAULT_COMPRESS_TYPE
 from .package import backup_tarfile
@@ -34,7 +37,7 @@ def backup_check(backup_path: str) -> bool:
         check_file = backup_tarfile(backup_path, True)
         assert check_file.readonly
 
-        if not backup_check_file(check_file):
+        if not backup_check_pack(check_file):
             cmds.logger.warn("Check backup failed.")
             check_file.close()
             return False
@@ -62,13 +65,65 @@ def backup_pack(scanner: backup_scanner,
         cmds.logger.info(f"Create a temp backup file: {backup_temp.path}, "
                          f"compress type: {comptype}.")
 
+        def backup_object(desc: backup_description,
+                          object: backup_scanner.object) -> bool:
+            assert isinstance(desc, backup_description)
+            assert isinstance(object, backup_scanner.object)
+
+            def copy_file(source: str, item: backup_check_item) -> bool:
+                assert isinstance(source, str)
+                assert isinstance(item, backup_check_item)
+                assert item.isfile and not item.islink
+                assert isinstance(item.md5, str)
+
+                def calculate_md5(path: str) -> str:
+                    assert isinstance(path, str)
+                    with open(path, "rb") as file:
+                        md5_hash = hashlib.md5()
+                        while True:
+                            data = file.read(1024**2)
+                            if not data:
+                                break
+                            md5_hash.update(data)
+                    return md5_hash.hexdigest()
+
+                with NamedTemporaryFile(dir=tempdir) as tempfile:
+                    # copy file and check md5
+                    shutil.copy(source, tempfile.name)
+                    md5 = calculate_md5(tempfile.name)
+                    if md5 != item.md5:
+                        return False
+                    # archive copied file
+                    backup_temp.add(tempfile.name, item.name)
+                    return True
+
+            item = backup_check_item(name=object.relpath,
+                                     size=object.size,
+                                     isdir=object.isdir,
+                                     isfile=object.isfile,
+                                     islink=object.islink,
+                                     md5=object.md5 if object.isfile else None,
+                                     linkname=os.readlink(object.abspath)
+                                     if object.islink else None)
+
+            if item.isfile and not item.islink:
+                if copy_file(source=object.abspath, item=item) is not True:
+                    # cmds.logger.debug(f"Archive file {object.relpath} again")
+                    return False
+            else:
+                backup_temp.add(object.abspath, object.relpath)
+
+            desc.checklist.add(item)
+            return True
+
         desc = backup_description()
 
         # archive backup object
         for object in scanner:
             cmds.logger.debug(f"Archive {object.relpath}")
-            backup_temp.add(object.abspath, object.relpath)
-            desc.checklist.add_object(object)
+            while True:
+                if backup_object(desc=desc, object=object) is True:
+                    break
 
         # create backup checklist
         checklist_path = os.path.join(tempdir, "checklist")

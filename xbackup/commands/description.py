@@ -16,7 +16,7 @@ from xarg import run_command
 from ..utils import URL_PROG
 from ..utils import __prog_desc__
 from ..utils import __version__
-from ..utils import backup_check_file
+from ..utils import backup_check_pack
 from ..utils import backup_description
 from ..utils import backup_tarfile
 
@@ -45,7 +45,7 @@ def run_cmd(cmds: commands) -> int:
     backup_file = backup_tarfile(backup_path, True)
     assert backup_file.readonly
 
-    if not backup_check_file(backup_file):
+    if not backup_check_pack(backup_file):
         cmds.stdout("check error")
         backup_file.close()
         return EIO
