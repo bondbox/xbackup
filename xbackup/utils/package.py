@@ -9,8 +9,7 @@ from typing import List
 from typing import Optional
 from typing import Union
 
-DEFAULT_COMPRESS_TYPE = "gz"
-COMPRESS_TYPE = ["gz", "bz2", "xz"]
+from .definer import DEFAULT_DIR
 
 
 class backup_tarfile:
@@ -94,9 +93,9 @@ class backup_tarfile:
         finally:
             tarf.close()
 
-    README = os.path.join(".xbackup", "readme")
-    CHECKLIST = os.path.join(".xbackup", "checklist")
-    DESCRIPTION = os.path.join(".xbackup", "description")
+    README = os.path.join(DEFAULT_DIR, "readme")
+    CHECKLIST = os.path.join(DEFAULT_DIR, "checklist")
+    DESCRIPTION = os.path.join(DEFAULT_DIR, "description")
 
     @property
     def checklist(self) -> Optional[IO[bytes]]:

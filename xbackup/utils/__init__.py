@@ -13,8 +13,8 @@ from xarg import commands
 
 from .abstract import backup_description
 from .checker import backup_check_file
-from .package import COMPRESS_TYPE
-from .package import DEFAULT_COMPRESS_TYPE
+from .definer import COMPRESS_TYPE
+from .definer import DEFAULT_COMPRESS_TYPE
 from .package import backup_tarfile
 from .scanner import backup_scanner
 

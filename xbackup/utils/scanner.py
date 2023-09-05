@@ -10,6 +10,8 @@ from typing import Optional
 from typing import Sequence
 from typing import Set
 
+from .definer import DEFAULT_DIR
+
 
 class backup_scanner:
     '''
@@ -134,7 +136,35 @@ class backup_scanner:
         backup_objects = __objects(self.__paths) - __objects(self.__exclude)
 
         for path in backup_objects:
-            new_objects[path] = backup_scanner.object(path, self.__start)
+            # filter files and directorys, such as: ".xbackup"
+            def filter(obj: backup_scanner.object) -> bool:
+                assert isinstance(obj, backup_scanner.object)
+                obj.relpath
+
+                FILTER_OBJECTS = [DEFAULT_DIR]
+
+                def filter_obj(path: str) -> bool:
+                    assert isinstance(path, str)
+                    if path in FILTER_OBJECTS:
+                        return True
+
+                    dirname = os.path.dirname(path)
+                    if not dirname:
+                        return False
+                    elif dirname in FILTER_OBJECTS:
+                        return True
+                    else:
+                        return filter_obj(dirname)
+
+                if filter_obj(obj.relpath) is True:
+                    return True
+
+                return False
+
+            obj = backup_scanner.object(path, self.start)
+            if filter(obj) is True:
+                continue
+            new_objects[path] = obj
 
         self.__objects = new_objects
         os.chdir(current)
@@ -142,10 +172,6 @@ class backup_scanner:
     @property
     def start(self) -> str:
         return self.__start
-
-    # @property
-    # def exclude(self) -> Iterator[str]:
-    #     return iter(self.__exclude)
 
     def reload(self):
         self.__load()
