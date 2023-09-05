@@ -6,9 +6,9 @@ import os
 import pickle
 from typing import Dict
 from typing import IO
-from typing import List
 from typing import Optional
 from typing import Sequence
+from typing import Set
 from typing import Tuple
 
 from xarg import commands
@@ -193,7 +193,7 @@ class backup_check_list:
                 self.__links += 1
 
     def __init__(self):
-        self.__items: List[backup_check_item] = []
+        self.__items: Set[backup_check_item] = set()
         self.__counter = self.item_counter()
 
     def __iter__(self):
@@ -205,7 +205,7 @@ class backup_check_list:
 
     def add(self, item: backup_check_item):
         assert isinstance(item, backup_check_item)
-        self.__items.append(item)
+        self.__items.add(item)
         self.counter.inc(item)
 
     def add_object(self, object: backup_scanner.object):
