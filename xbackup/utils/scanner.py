@@ -53,7 +53,8 @@ class backup_scanner:
 
         @property
         def size(self) -> int:
-            return os.stat(self.abspath).st_size if self.isfile else 0
+            return os.stat(
+                self.abspath).st_size if self.isfile and not self.islink else 0
 
         @property
         def isdir(self) -> bool:

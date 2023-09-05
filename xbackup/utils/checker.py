@@ -44,7 +44,7 @@ class backup_check_item:
             flag |= self.item_flag.isfile
 
         if islink:
-            assert isinstance(linkname, str)
+            assert isinstance(linkname, str) and size == 0
             flag |= self.item_flag.islink
         else:
             assert linkname is None
