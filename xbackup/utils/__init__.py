@@ -66,7 +66,7 @@ def backup_pack(scanner: backup_scanner,
 
         # archive backup object
         for object in scanner:
-            cmds.logger.debug(f"{object.relpath}: {object.abspath}")
+            cmds.logger.debug(f"Archive {object.relpath}")
             backup_temp.add(object.abspath, object.relpath)
             desc.checklist.add_object(object)
 

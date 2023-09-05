@@ -10,6 +10,8 @@ from typing import Optional
 from typing import Sequence
 from typing import Set
 
+from xarg import commands
+
 from .definer import DEFAULT_DIR
 
 
@@ -97,8 +99,8 @@ class backup_scanner:
         assert isinstance(paths, Sequence)
         assert isinstance(exclude, Sequence)
         self.__start: str = start if isinstance(start, str) else os.getcwd()
-        self.__paths = paths
-        self.__exclude = exclude
+        self.__paths = set(paths)
+        self.__exclude = set(exclude)
         self.__objects: Dict[str, backup_scanner.object] = {}
         self.__load()
 
@@ -109,64 +111,65 @@ class backup_scanner:
         current = os.getcwd()
         os.chdir(self.__start)
 
-        def __objects(paths: Sequence[str]) -> Set[str]:
-            objects = []
+        def scan(paths: Set[str]) -> Dict[str, backup_scanner.object]:
+            cmds = commands()
+
+            def rpath(path: str) -> str:
+                assert isinstance(path, str)
+                return os.path.relpath(path)
+
+            # filter files and directorys, such as: ".xbackup"
+            def filter() -> Set[str]:
+                filter_paths = {rpath(DEFAULT_DIR)}
+
+                for path in self.__exclude:
+                    filter_paths.add(rpath(path))
+
+                return filter_paths
+
+            filter_paths: Set[str] = filter()
+            objects: Dict[str, backup_scanner.object] = {}
+
+            def add(path: str) -> bool:
+                path = rpath(path)
+                assert isinstance(path, str)
+                if path not in filter_paths:
+                    obj = backup_scanner.object(path, self.start)
+                    cmds.logger.debug(f"Scan {obj.relpath}")
+                    objects[path] = obj
+                    return True
+                else:
+                    return False
+
             for path in paths:
                 assert isinstance(path, str)
                 if os.path.isdir(path):
                     if os.path.islink(path):
-                        objects.append(path)
+                        add(path)
                         continue
+
                     for root, dirs, files in os.walk(path, followlinks=True):
                         for filename in files:
                             # TODO: auto add link file
-                            objects.append(os.path.join(root, filename))
-                        # create backup object for directory symbolic link
-                        # otherwise find every object under subdirectories
+                            add(os.path.join(root, filename))
+
                         for dirname in [dir for dir in dirs]:
                             dirpath = os.path.join(root, dirname)
-                            if os.path.islink(dirpath):
-                                objects.append(dirpath)
+
+                            if rpath(dirpath) in filter_paths:
                                 dirs.remove(dirname)
+                                continue
+
+                            # create backup object for directory symbolic link
+                            # otherwise find every object under subdirectories
+                            if os.path.islink(dirpath):
+                                dirs.remove(dirname)
+                                add(dirpath)
                 else:
-                    objects.append(path)
-            return set([os.path.abspath(obj) for obj in objects])
+                    add(path)
+            return objects
 
-        new_objects: Dict[str, backup_scanner.object] = {}
-        backup_objects = __objects(self.__paths) - __objects(self.__exclude)
-
-        for path in backup_objects:
-            # filter files and directorys, such as: ".xbackup"
-            def filter(obj: backup_scanner.object) -> bool:
-                assert isinstance(obj, backup_scanner.object)
-                obj.relpath
-
-                FILTER_OBJECTS = [DEFAULT_DIR]
-
-                def filter_obj(path: str) -> bool:
-                    assert isinstance(path, str)
-                    if path in FILTER_OBJECTS:
-                        return True
-
-                    dirname = os.path.dirname(path)
-                    if not dirname:
-                        return False
-                    elif dirname in FILTER_OBJECTS:
-                        return True
-                    else:
-                        return filter_obj(dirname)
-
-                if filter_obj(obj.relpath) is True:
-                    return True
-
-                return False
-
-            obj = backup_scanner.object(path, self.start)
-            if filter(obj) is True:
-                continue
-            new_objects[path] = obj
-
-        self.__objects = new_objects
+        self.__objects = scan(self.__paths)
         os.chdir(current)
 
     @property
