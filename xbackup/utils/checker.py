@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 # coding:utf-8
 
+# from concurrent.futures import ThreadPoolExecutor
+# from concurrent.futures import as_completed
 import enum
 import pickle
 from typing import Dict
@@ -294,6 +296,12 @@ def backup_check_pack(tarfile: backup_tarfile) -> bool:
     if set([i.name for i in chklist]) - set([m.name for m in tarfile.members]):
         cmds.logger.error("Check members failed.")
         return False
+
+    # with ThreadPoolExecutor(thread_name_prefix="bakchk") as pool:
+    #     futures = [pool.submit(check_item, item, tarfile) for item in chklist]
+    #     for future in as_completed(futures):
+    #         if future.result() is not True:
+    #             return False
 
     for item in chklist:
         if check_item(item, tarfile) is not True:
