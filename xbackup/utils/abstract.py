@@ -79,16 +79,22 @@ class backup_description:
 
     def __init__(self,
                  filepath: str,
+                 dversion: Optional[int] = None,
                  timestamp: Optional[btime] = None,
                  checklist: Optional[backup_check_list] = None):
         assert isinstance(filepath, str)
+        assert isinstance(dversion, int) or dversion is None
+
         self.__filepath = filepath
-        self.__timestamp = timestamp if isinstance(
-            timestamp, self.btime) else self.btime()
-        self.__checklist = checklist if isinstance(
-            checklist, backup_check_list) else backup_check_list()
-        assert isinstance(self.__timestamp, self.btime)
-        assert isinstance(self.__checklist, backup_check_list)
+        self.__dversion = self.DESC_VERSION if dversion is None else dversion
+        self.__timestamp = self.btime() if timestamp is None else timestamp
+        self.__checklist = backup_check_list(
+        ) if checklist is None else checklist
+
+        assert isinstance(self.dversion, int)
+        assert self.dversion == self.DESC_VERSION
+        assert isinstance(self.timestamp, self.btime)
+        assert isinstance(self.checklist, backup_check_list)
 
     def __str__(self):
         strdata = self.data
@@ -118,6 +124,10 @@ class backup_description:
         return self.__filepath
 
     @property
+    def dversion(self) -> int:
+        return self.__dversion
+
+    @property
     def timestamp(self) -> btime:
         return self.__timestamp
 
@@ -133,7 +143,7 @@ class backup_description:
     @property
     def data(self) -> Dict:
         return {
-            self.VERSION: self.DESC_VERSION,
+            self.VERSION: self.dversion,
             self.BAKTIME: self.timestamp.dump_dict(),
             self.CHKLIST: {
                 self.COUNTER: self.checklist.counter.dump_dict()
@@ -152,6 +162,7 @@ class backup_description:
 
         data = yaml.load(stream=description, Loader=yaml.FullLoader)
         return backup_description(filepath=backup_file.path,
+                                  dversion=data[cls.VERSION],
                                   timestamp=backup_description.btime.load_dict(
                                       data[cls.BAKTIME]),
                                   checklist=backup_check_list.load(checklist))
