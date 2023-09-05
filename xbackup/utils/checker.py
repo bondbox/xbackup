@@ -47,7 +47,7 @@ class backup_check_item:
             assert md5 is None
 
         if islink:
-            assert isinstance(self.linkname, str)
+            assert isinstance(linkname, str)
             flag |= self.item_flag.islink
         else:
             assert linkname is None
