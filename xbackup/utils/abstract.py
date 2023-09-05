@@ -2,6 +2,7 @@
 # coding:utf-8
 
 from datetime import datetime
+import os
 from typing import Dict
 from typing import Optional
 
@@ -75,12 +76,17 @@ class backup_description:
             return backup_description.btime(start, finish)
 
     def __init__(self,
-                 timer: Optional[btime] = None,
+                 filepath: str,
+                 timestamp: Optional[btime] = None,
                  checklist: Optional[backup_check_list] = None):
-        self.__timestamp = timer if isinstance(timer,
-                                               self.btime) else self.btime()
+        assert isinstance(filepath, str)
+        self.__filepath = filepath
+        self.__timestamp = timestamp if isinstance(
+            timestamp, self.btime) else self.btime()
         self.__checklist = checklist if isinstance(
             checklist, backup_check_list) else backup_check_list()
+        assert isinstance(self.__timestamp, self.btime)
+        assert isinstance(self.__checklist, backup_check_list)
 
     def __str__(self):
         strdata = self.data
@@ -94,8 +100,17 @@ class backup_description:
         size = counter[backup_check_list.item_counter.SIZE]
         counter[backup_check_list.item_counter.SIZE] = "{0}({1})".format(
             size, naturalsize(size, gnu=True))
+        size = os.stat(self.filepath).st_size
+        strdata["package"] = {
+            "path": self.filepath,
+            "size": "{0}({1})".format(size, naturalsize(size, gnu=True)),
+        }
         return yaml.dump(strdata, default_flow_style=False,
                          sort_keys=False).strip()
+
+    @property
+    def filepath(self) -> str:
+        return self.__filepath
 
     @property
     def timestamp(self) -> btime:
@@ -131,6 +146,7 @@ class backup_description:
         assert description is not None
 
         data = yaml.load(stream=description, Loader=yaml.FullLoader)
-        return backup_description(
-            backup_description.btime.load_dict(data[cls.BAKTIME]),
-            backup_check_list.load(checklist))
+        return backup_description(filepath=backup_file.path,
+                                  timestamp=backup_description.btime.load_dict(
+                                      data[cls.BAKTIME]),
+                                  checklist=backup_check_list.load(checklist))

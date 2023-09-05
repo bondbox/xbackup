@@ -116,7 +116,7 @@ def backup_pack(scanner: backup_scanner,
             desc.checklist.add(item)
             return True
 
-        desc = backup_description()
+        desc = backup_description(backup_temp.path)
 
         # archive backup object
         for object in scanner:
