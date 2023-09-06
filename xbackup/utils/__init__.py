@@ -5,10 +5,15 @@ from errno import EAGAIN
 from errno import EBUSY
 from errno import ENOENT
 import os
+from queue import Queue
 import shutil
-from tempfile import NamedTemporaryFile
 from tempfile import TemporaryDirectory
+from threading import Thread
+from threading import current_thread
+import time
+from typing import List
 from typing import Optional
+import uuid
 
 from xarg import commands
 
@@ -18,6 +23,7 @@ from .checker import backup_check_pack
 from .checker import calculate_md5
 from .definer import COMPRESS_TYPE
 from .definer import DEFAULT_COMPRESS_TYPE
+from .definer import THDNUM_BAKPREP
 from .package import backup_tarfile
 from .scanner import backup_scanner
 
@@ -78,15 +84,15 @@ def backup_pack(scanner: backup_scanner,
                 assert item.isfile and not item.islink
                 assert isinstance(item.md5, str)
 
-                with NamedTemporaryFile(dir=tempdir) as tempfile:
-                    # copy file and check md5
-                    shutil.copy(source, tempfile.name)
-                    md5 = calculate_md5(tempfile.name)
-                    if md5 != item.md5:
-                        return False
-                    # archive copied file
-                    backup_temp.wrap.add(tempfile.name, item.name)
-                    return True
+                # copy file and check md5
+                tempname = uuid.uuid1().hex
+                temppath = os.path.join(tempdir, tempname)
+                shutil.copy(source, temppath)
+                md5 = calculate_md5(temppath)
+                if md5 != item.md5:
+                    return False
+                backup_queue.put((temppath, item, True))
+                return True
 
             item = backup_check_item(name=object.relpath,
                                      size=object.size,
@@ -99,30 +105,86 @@ def backup_pack(scanner: backup_scanner,
 
             if item.isfile and not item.islink:
                 if copy_file(source=object.abspath, item=item) is not True:
-                    # cmds.logger.debug(f"Archive file {object.relpath} again")
                     return False
             else:
-                backup_temp.wrap.add(object.abspath, object.relpath)
+                backup_queue.put((object.abspath, item, False))
 
-            desc.checklist.add(item)
             return True
 
+        backup_exit = False
+        backup_queue = Queue()
+        object_queue = Queue()
         desc = backup_description(backup_temp.path)
 
+        def task_archive():
+            name = current_thread().name
+            cmds.logger.debug(f"Task archive thread[{name}] start.")
+            while not backup_exit:
+                if backup_queue.empty():
+                    time.sleep(0.05)
+                    continue
+                path, item, delete = backup_queue.get()
+                assert isinstance(path, str)
+                assert isinstance(item, backup_check_item)
+                assert isinstance(delete, bool)
+                cmds.logger.debug(f"Archive {item.name}.")
+                backup_temp.wrap.add(name=path, arcname=item.name)
+                desc.checklist.add(item)
+                if delete:
+                    os.remove(path=path)
+                backup_queue.task_done()
+            cmds.logger.debug(f"Task archive thread[{name}] exit.")
+
+        def task_prepare():
+            name = current_thread().name
+            cmds.logger.debug(f"Task prepare thread[{name}] start.")
+            while not backup_exit:
+                if object_queue.empty():
+                    time.sleep(0.05)
+                    continue
+                object = object_queue.get()
+                assert isinstance(object, backup_scanner.object)
+                cmds.logger.debug(f"Prepare {object.relpath}.")
+                while True:
+                    try:
+                        if backup_object(desc=desc, object=object) is True:
+                            break
+                        time.sleep(0.1)
+                    except Exception as e:
+                        cmds.logger.error(e)
+                object_queue.task_done()
+            cmds.logger.debug(f"Task prepare thread[{name}] exit.")
+
         # archive backup object
+        task_threads: List[Thread] = []
+        task_threads.append(Thread(target=task_archive, name="xbak-arch"))
+        task_threads.extend([
+            Thread(target=task_prepare, name=f"xbak-prep{i}")
+            for i in range(THDNUM_BAKPREP)
+        ])
+
+        for thread in task_threads:
+            thread.start()
+
         for object in scanner:
-            cmds.logger.debug(f"Archive {object.relpath}")
-            while True:
-                if backup_object(desc=desc, object=object) is True:
-                    break
+            object_queue.put(object)
+
+        object_queue.join()
+        backup_queue.join()
+
+        backup_exit = True
+        for thread in task_threads:
+            thread.join()
 
         # create backup checklist
+        cmds.logger.debug("Dump checklist.")
         checklist_path = os.path.join(tempdir, "checklist")
         with open(checklist_path, "wb") as tempfd:
             # dump check item to temp
             desc.checklist.dump(tempfd)
 
         # create backup description
+        cmds.logger.debug("Dump description.")
         description_path = os.path.join(tempdir, "description")
         with open(description_path, "w") as tempfd:
             tempfd.write(desc.dump())

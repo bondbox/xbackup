@@ -17,6 +17,7 @@ from typing import Tuple
 
 from xarg import commands
 
+from .definer import MAX_WORKERS
 from .package import backup_tarfile
 
 
@@ -348,7 +349,8 @@ def backup_check_pack(tarfile: backup_tarfile, fast: bool = False) -> bool:
         def check_fast() -> bool:
             tarfile.wrap.extractall(tempdir,
                                     [m for m in tarfile.members if m.isreg])
-            with ThreadPoolExecutor(thread_name_prefix="bakchk") as pool:
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS,
+                                    thread_name_prefix="xbak-chk") as pool:
                 futures = [
                     pool.submit(check_item, item=item, tarfile=tarfile)
                     for item in chklist
