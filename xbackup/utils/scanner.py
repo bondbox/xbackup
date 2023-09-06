@@ -5,6 +5,7 @@ from hashlib import md5
 from hashlib import sha1
 from hashlib import sha256
 import os
+import stat
 from typing import Dict
 from typing import Optional
 from typing import Sequence
@@ -52,21 +53,32 @@ class backup_scanner:
             return self.__realpath
 
         @property
+        def stat(self) -> os.stat_result:
+            return os.stat(self.abspath)
+
+        @property
         def size(self) -> int:
-            return os.stat(
-                self.abspath).st_size if self.isfile and not self.islink else 0
+            return self.stat.st_size
 
         @property
         def isdir(self) -> bool:
-            return os.path.isdir(self.abspath)
+            return stat.S_ISDIR(self.stat.st_mode)
+
+        @property
+        def isreg(self) -> bool:
+            return stat.S_ISREG(self.stat.st_mode)
 
         @property
         def isfile(self) -> bool:
-            return os.path.isfile(self.abspath)
+            return self.isreg
 
         @property
         def islink(self) -> bool:
-            return os.path.islink(self.abspath)
+            return stat.S_ISLNK(self.stat.st_mode)
+
+        @property
+        def issym(self) -> bool:
+            return self.islink
 
         @property
         def md5(self) -> Optional[str]:
