@@ -94,7 +94,7 @@ def backup_pack(scanner: backup_scanner,
                     if md5 != item.md5:
                         return False
                     # archive copied file
-                    backup_temp.add(tempfile.name, item.name)
+                    backup_temp.wrap.add(tempfile.name, item.name)
                     return True
 
             item = backup_check_item(name=object.relpath,
@@ -111,7 +111,7 @@ def backup_pack(scanner: backup_scanner,
                     # cmds.logger.debug(f"Archive file {object.relpath} again")
                     return False
             else:
-                backup_temp.add(object.abspath, object.relpath)
+                backup_temp.wrap.add(object.abspath, object.relpath)
 
             desc.checklist.add(item)
             return True

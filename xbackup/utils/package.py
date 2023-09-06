@@ -1,13 +1,11 @@
 #!/usr/bin/python3
 # coding:utf-8
 
-from hashlib import md5
 import os
 import tarfile
 from typing import IO
 from typing import List
 from typing import Optional
-from typing import Union
 
 from .definer import DEFAULT_DIR
 
@@ -39,13 +37,18 @@ class backup_tarfile:
             self.__tarfile = None
 
     @property
+    def path(self) -> str:
+        return self.__realpath
+
+    @property
+    def wrap(self) -> tarfile.TarFile:
+        assert isinstance(self.__tarfile, tarfile.TarFile)
+        return self.__tarfile
+
+    @property
     def readonly(self) -> bool:
         assert isinstance(self.__tarfile, tarfile.TarFile)
         return self.__tarfile.mode == "r"
-
-    @property
-    def path(self) -> str:
-        return self.__realpath
 
     @property
     def names(self) -> List[str]:
@@ -57,60 +60,24 @@ class backup_tarfile:
         assert isinstance(self.__tarfile, tarfile.TarFile)
         return self.__tarfile.getmembers()
 
-    def getmember(self, name: str) -> tarfile.TarInfo:
-        assert isinstance(name, str)
-        assert isinstance(self.__tarfile, tarfile.TarFile)
-        return self.__tarfile.getmember(name)
-
-    def add(self,
-            name: str,
-            arcname: Optional[str] = None,
-            recursive: bool = False) -> None:
-        assert isinstance(self.__tarfile, tarfile.TarFile)
-        assert not self.readonly
-        self.__tarfile.add(name, arcname, recursive)
-
-    def extractfile(
-            self, member: Union[str, tarfile.TarInfo]) -> Optional[IO[bytes]]:
-        assert isinstance(self.__tarfile, tarfile.TarFile)
-        return self.__tarfile.extractfile(member)
-
-    def file_md5(self, member: Union[str, tarfile.TarInfo]) -> Optional[str]:
-        tarf = self.extractfile(member)
-        if not tarf:
-            return None
-
-        try:
-            hash_md5 = md5()
-            while True:
-                data = tarf.read(1024**2)
-                if not data:
-                    break
-                hash_md5.update(data)
-            return hash_md5.hexdigest()
-        except Exception:
-            return None
-        finally:
-            tarf.close()
-
     README = os.path.join(DEFAULT_DIR, "readme")
     CHECKLIST = os.path.join(DEFAULT_DIR, "checklist")
     DESCRIPTION = os.path.join(DEFAULT_DIR, "description")
 
     @property
     def checklist(self) -> Optional[IO[bytes]]:
-        return self.extractfile(self.CHECKLIST)
+        return self.wrap.extractfile(self.CHECKLIST)
 
     @checklist.setter
     def checklist(self, value: str):
         if os.path.isfile(value) and self.CHECKLIST not in self.names:
-            self.add(value, self.CHECKLIST)
+            self.wrap.add(value, self.CHECKLIST)
 
     @property
     def description(self) -> Optional[IO[bytes]]:
-        return self.extractfile(self.DESCRIPTION)
+        return self.wrap.extractfile(self.DESCRIPTION)
 
     @description.setter
     def description(self, value: str):
         if os.path.isfile(value) and self.DESCRIPTION not in self.names:
-            self.add(value, self.DESCRIPTION)
+            self.wrap.add(value, self.DESCRIPTION)

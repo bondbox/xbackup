@@ -4,6 +4,7 @@
 # from concurrent.futures import ThreadPoolExecutor
 # from concurrent.futures import as_completed
 import enum
+import hashlib
 import pickle
 from typing import Dict
 from typing import IO
@@ -235,7 +236,25 @@ def backup_check_pack(tarfile: backup_tarfile) -> bool:
         assert isinstance(item, backup_check_item)
         assert isinstance(tarfile, backup_tarfile)
 
-        md5 = tarfile.file_md5(item.name)
+        def file_md5(member: str) -> Optional[str]:
+            tarf = tarfile.wrap.extractfile(member)
+            if not tarf:
+                return None
+
+            try:
+                hash_md5 = hashlib.md5()
+                while True:
+                    data = tarf.read(1024**2)
+                    if not data:
+                        break
+                    hash_md5.update(data)
+                return hash_md5.hexdigest()
+            except Exception:
+                return None
+            finally:
+                tarf.close()
+
+        md5 = file_md5(item.name)
         if md5 == item.md5:
             return True
 
@@ -246,7 +265,7 @@ def backup_check_pack(tarfile: backup_tarfile) -> bool:
     def check_item(item: backup_check_item, tarfile: backup_tarfile) -> bool:
         assert isinstance(item, backup_check_item)
         assert isinstance(tarfile, backup_tarfile)
-        member = tarfile.getmember(item.name)
+        member = tarfile.wrap.getmember(item.name)
 
         if member.isdir() and item.isdir != member.isdir():
             cmds.logger.error(f"Check {item.name} isdir failed.")
