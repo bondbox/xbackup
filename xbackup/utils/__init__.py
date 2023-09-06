@@ -4,7 +4,6 @@
 from errno import EAGAIN
 from errno import EBUSY
 from errno import ENOENT
-import hashlib
 import os
 import shutil
 from tempfile import NamedTemporaryFile
@@ -16,6 +15,7 @@ from xarg import commands
 from .abstract import backup_description
 from .checker import backup_check_item
 from .checker import backup_check_pack
+from .checker import calculate_md5
 from .definer import COMPRESS_TYPE
 from .definer import DEFAULT_COMPRESS_TYPE
 from .package import backup_tarfile
@@ -30,14 +30,16 @@ __prog_list__ = f"{__prog__}-list"
 URL_PROG = "https://github.com/bondbox/xbackup"
 
 
-def backup_check(backup_path: str) -> bool:
+def backup_check(backup_path: str, fast: bool = False) -> bool:
+    assert isinstance(backup_path, str)
+    assert isinstance(fast, bool)
     cmds = commands()
 
     try:
         check_file = backup_tarfile(backup_path, True)
         assert check_file.readonly
 
-        if not backup_check_pack(check_file):
+        if not backup_check_pack(tarfile=check_file, fast=fast):
             cmds.logger.warn("Check backup failed.")
             check_file.close()
             return False
@@ -75,17 +77,6 @@ def backup_pack(scanner: backup_scanner,
                 assert isinstance(item, backup_check_item)
                 assert item.isfile and not item.islink
                 assert isinstance(item.md5, str)
-
-                def calculate_md5(path: str) -> str:
-                    assert isinstance(path, str)
-                    with open(path, "rb") as file:
-                        md5_hash = hashlib.md5()
-                        while True:
-                            data = file.read(1024**2)
-                            if not data:
-                                break
-                            md5_hash.update(data)
-                    return md5_hash.hexdigest()
 
                 with NamedTemporaryFile(dir=tempdir) as tempfile:
                     # copy file and check md5
@@ -142,7 +133,7 @@ def backup_pack(scanner: backup_scanner,
         backup_temp.close()
 
         # check after backup
-        if check and backup_check(backup_temp.path) is not True:
+        if check and not backup_check(backup_path=backup_temp.path, fast=True):
             return EAGAIN
 
         # move temp file to backup file

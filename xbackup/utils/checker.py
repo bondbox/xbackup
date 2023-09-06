@@ -1,11 +1,13 @@
 #!/usr/bin/python3
 # coding:utf-8
 
-# from concurrent.futures import ThreadPoolExecutor
-# from concurrent.futures import as_completed
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import as_completed
 import enum
 import hashlib
+import os
 import pickle
+from tempfile import TemporaryDirectory
 from typing import Dict
 from typing import IO
 from typing import Optional
@@ -16,6 +18,18 @@ from typing import Tuple
 from xarg import commands
 
 from .package import backup_tarfile
+
+
+def calculate_md5(path: str) -> str:
+    assert isinstance(path, str)
+    with open(path, "rb") as file:
+        md5_hash = hashlib.md5()
+        while True:
+            data = file.read(1024**2)
+            if not data:
+                break
+            md5_hash.update(data)
+    return md5_hash.hexdigest()
 
 
 class backup_check_item:
@@ -219,8 +233,9 @@ class backup_check_list:
         return check_list
 
 
-def backup_check_pack(tarfile: backup_tarfile) -> bool:
+def backup_check_pack(tarfile: backup_tarfile, fast: bool = False) -> bool:
     assert isinstance(tarfile, backup_tarfile)
+    assert isinstance(fast, bool)
     assert tarfile.readonly
     checklist = tarfile.checklist
     assert checklist is not None
@@ -229,101 +244,118 @@ def backup_check_pack(tarfile: backup_tarfile) -> bool:
     assert isinstance(chklist, backup_check_list)
 
     cmds = commands()
-    for item in chklist:
-        cmds.logger.debug(f"{item}")
-
-    def check_file(item: backup_check_item, tarfile: backup_tarfile) -> bool:
-        assert isinstance(item, backup_check_item)
-        assert isinstance(tarfile, backup_tarfile)
-
-        def file_md5(member: str) -> Optional[str]:
-            tarf = tarfile.wrap.extractfile(member)
-            if not tarf:
-                return None
-
-            try:
-                hash_md5 = hashlib.md5()
-                while True:
-                    data = tarf.read(1024**2)
-                    if not data:
-                        break
-                    hash_md5.update(data)
-                return hash_md5.hexdigest()
-            except Exception:
-                return None
-            finally:
-                tarf.close()
-
-        md5 = file_md5(item.name)
-        if md5 == item.md5:
-            return True
-
-        cmds.logger.debug(f"Check {item.name} md5 is {md5}, "
-                          f"expected {item.md5}.")
-        return False
-
-    def check_item(item: backup_check_item, tarfile: backup_tarfile) -> bool:
-        assert isinstance(item, backup_check_item)
-        assert isinstance(tarfile, backup_tarfile)
-        member = tarfile.wrap.getmember(item.name)
-
-        if member.isdir() and item.isdir != member.isdir():
-            cmds.logger.error(f"Check {item.name} isdir failed.")
-            return False
-
-        if member.isfile():
-            if item.isfile != member.isfile():
-                cmds.logger.error(f"Check {item.name} isfile failed.")
-                return False
-
-            if check_file(item, tarfile) is not True:
-                cmds.logger.error(f"Check {item.name} file md5 failed.")
-                return False
-
-        if member.issym():
-            if item.islink != member.issym():
-                cmds.logger.error(f"Check {item.name} islink failed.")
-                return False
-
-            # check symbolic link
-            if item.linkname != member.linkname:
-                cmds.logger.debug(
-                    f"Check {item.name} linkname is {member.linkname}, "
-                    f"expected {item.linkname}.")
-                cmds.logger.error(f"Check {item.name} linkname failed.")
-                return False
-
-        # if member.islnk():
-        #     cmds.logger.error(f"Check {item.name} hard link failed.")
-        #     return False
-
-        # if member.isdev():
-        #     cmds.logger.error(f"Check {item.name} device failed.")
-        #     return False
-
-        # if member.isreg():
-        #     cmds.logger.error(f"Check {item.name} regular file failed.")
-        #     return False
-
-        # if member.chksum:
-        #     cmds.logger.error(f"Check {item.name} regular file failed.")
-        #     return False
-
-        cmds.logger.debug(f"Check {item.name} ok.")
-        return True
 
     if set([i.name for i in chklist]) - set([m.name for m in tarfile.members]):
         cmds.logger.error("Check members failed.")
         return False
 
-    # with ThreadPoolExecutor(thread_name_prefix="bakchk") as pool:
-    #     futures = [pool.submit(check_item, item, tarfile) for item in chklist]
-    #     for future in as_completed(futures):
-    #         if future.result() is not True:
-    #             return False
+    with TemporaryDirectory(dir=os.path.dirname(tarfile.path)) as tempdir:
 
-    for item in chklist:
-        if check_item(item, tarfile) is not True:
+        def check_file(item: backup_check_item,
+                       tarfile: backup_tarfile) -> bool:
+            assert isinstance(item, backup_check_item)
+            assert isinstance(tarfile, backup_tarfile)
+
+            def file_md5(name: str, fast: bool = False) -> Optional[str]:
+                if not fast:
+                    tarf = tarfile.wrap.extractfile(name)
+                    if not tarf:
+                        return None
+
+                    try:
+                        hash_md5 = hashlib.md5()
+                        while True:
+                            data = tarf.read(1024**2)
+                            if not data:
+                                break
+                            hash_md5.update(data)
+                        return hash_md5.hexdigest()
+                    except Exception:
+                        return None
+                    finally:
+                        tarf.close()
+
+                else:
+                    path = os.path.join(tempdir, name)
+                    md5 = calculate_md5(path=path)
+                    return md5
+
+            md5 = file_md5(name=item.name, fast=fast)
+            if md5 == item.md5:
+                return True
+
+            cmds.logger.debug(f"Check {item.name} md5 is {md5}, "
+                              f"expected {item.md5}.")
             return False
 
-    return True
+        def check_item(item: backup_check_item,
+                       tarfile: backup_tarfile) -> bool:
+            assert isinstance(item, backup_check_item)
+            assert isinstance(tarfile, backup_tarfile)
+            member = tarfile.wrap.getmember(item.name)
+
+            if member.isdir() and item.isdir != member.isdir():
+                cmds.logger.error(f"Check {item.name} isdir failed.")
+                return False
+
+            if member.isfile():
+                if item.isfile != member.isfile():
+                    cmds.logger.error(f"Check {item.name} isfile failed.")
+                    return False
+
+                if check_file(item=item, tarfile=tarfile) is not True:
+                    cmds.logger.error(f"Check {item.name} file md5 failed.")
+                    return False
+
+            if member.issym():
+                if item.islink != member.issym():
+                    cmds.logger.error(f"Check {item.name} islink failed.")
+                    return False
+
+                # check symbolic link
+                if item.linkname != member.linkname:
+                    cmds.logger.debug(
+                        f"Check {item.name} linkname is {member.linkname}, "
+                        f"expected {item.linkname}.")
+                    cmds.logger.error(f"Check {item.name} linkname failed.")
+                    return False
+
+            # if member.islnk():
+            #     cmds.logger.error(f"Check {item.name} hard link failed.")
+            #     return False
+
+            # if member.isdev():
+            #     cmds.logger.error(f"Check {item.name} device failed.")
+            #     return False
+
+            # if member.isreg():
+            #     cmds.logger.error(f"Check {item.name} regular file failed.")
+            #     return False
+
+            # if member.chksum:
+            #     cmds.logger.error(f"Check {item.name} regular file failed.")
+            #     return False
+
+            cmds.logger.debug(f"Check {item.name} ok.")
+            return True
+
+        def check_main() -> bool:
+            for item in chklist:
+                if check_item(item, tarfile) is not True:
+                    return False
+            return True
+
+        def check_fast() -> bool:
+            tarfile.wrap.extractall(tempdir,
+                                    [m for m in tarfile.members if m.isreg])
+            with ThreadPoolExecutor(thread_name_prefix="bakchk") as pool:
+                futures = [
+                    pool.submit(check_item, item=item, tarfile=tarfile)
+                    for item in chklist
+                ]
+                for future in as_completed(futures):
+                    if future.result() is not True:
+                        return False
+                return True
+
+        return check_main() if not fast else check_fast()

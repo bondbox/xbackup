@@ -50,7 +50,7 @@ def run_cmd(cmds: commands) -> int:
     assert backup_file.readonly
 
     check_on = cmds.args._backup_check_on_
-    if check_on and backup_check_pack(backup_file) is not True:
+    if check_on and not backup_check_pack(tarfile=backup_file, fast=True):
         cmds.stdout("check error")
         backup_file.close()
         return EIO

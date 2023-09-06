@@ -21,6 +21,10 @@ from ..utils import backup_check
 
 @add_command(__prog_check__)
 def add_cmd(_arg: argp):
+    _arg.add_argument("--memory",
+                      action="store_true",
+                      dest="_check_in_memory_",
+                      help="Check the backup file in memory")
     _arg.add_argument("_backup_path_",
                       type=str,
                       nargs="?",
@@ -40,7 +44,8 @@ def run_cmd(cmds: commands) -> int:
         cmds.logger.error(f"The backup file {backup_path} does not exist.")
         return ENOENT
 
-    if backup_check(backup_path) is not True:
+    fast_check = not cmds.args._check_in_memory_
+    if backup_check(backup_path=backup_path, fast=fast_check) is not True:
         cmds.stdout("check error")
         return EIO
 
