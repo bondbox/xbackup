@@ -250,7 +250,7 @@ def backup_check_pack(tarfile: backup_tarfile, fast: bool = False) -> bool:
         cmds.logger.error("Check members failed.")
         return False
 
-    with TemporaryDirectory(dir=os.path.dirname(tarfile.path)) as tempdir:
+    with TemporaryDirectory(dir=None) as tempdir:
 
         def check_file(item: backup_check_item,
                        tarfile: backup_tarfile) -> bool:

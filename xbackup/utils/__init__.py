@@ -65,7 +65,7 @@ def backup_pack(scanner: backup_scanner,
     cmds = commands()
 
     # create temp file
-    with TemporaryDirectory(dir=os.path.dirname(backup_path)) as tempdir:
+    with TemporaryDirectory(dir=None) as tempdir:
         cmds.logger.debug(f"Create the temp directory: {tempdir}.")
         backup_temp = backup_tarfile(os.path.join(tempdir, "xbackup-temp"),
                                      False, comptype)
@@ -121,7 +121,7 @@ def backup_pack(scanner: backup_scanner,
             cmds.logger.debug(f"Task archive thread[{name}] start.")
             while not backup_exit:
                 if backup_queue.empty():
-                    time.sleep(0.05)
+                    time.sleep(0.01)
                     continue
                 path, item, delete = backup_queue.get()
                 assert isinstance(path, str)
@@ -140,7 +140,7 @@ def backup_pack(scanner: backup_scanner,
             cmds.logger.debug(f"Task prepare thread[{name}] start.")
             while not backup_exit:
                 if object_queue.empty():
-                    time.sleep(0.05)
+                    time.sleep(0.01 * THDNUM_BAKPREP)
                     continue
                 object = object_queue.get()
                 assert isinstance(object, backup_scanner.object)
