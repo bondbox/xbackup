@@ -48,7 +48,7 @@ class backup_check_item:
     def __init__(self, name: str, size: int, isdir: bool, isfile: bool,
                  islink: bool, md5: Optional[str], linkname: Optional[str]):
         assert isinstance(name, str)
-        assert isinstance(size, int)
+        assert isinstance(size, int) and size >= 0
         assert isinstance(isdir, bool)
         assert isinstance(isfile, bool)
         assert isinstance(islink, bool)
@@ -56,7 +56,7 @@ class backup_check_item:
         flag = self.item_flag.none
 
         if isdir:
-            assert size == 0 and not isfile
+            assert not isfile
             flag |= self.item_flag.isdir
 
         if isfile:
@@ -65,7 +65,7 @@ class backup_check_item:
             flag |= self.item_flag.isfile
 
         if islink:
-            assert isinstance(linkname, str) and size == 0
+            assert isinstance(linkname, str)
             flag |= self.item_flag.islink
         else:
             assert linkname is None
