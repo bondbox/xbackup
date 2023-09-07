@@ -103,7 +103,7 @@ def run_cmd(cmds: commands) -> int:
         timestamp = datetime.now().strftime("%y%m%d%H%M%S")
         filename = f"{filename}-{timestamp}{ext}"
 
-    backup_path = os.path.join(os.path.normpath(backup_dir), filename)
+    backup_path = os.path.join(os.path.realpath(backup_dir), filename)
     if os.path.exists(backup_path):
         cmds.logger.error(f"The backup file {backup_path} already exists.")
         return EEXIST
