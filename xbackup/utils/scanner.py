@@ -5,8 +5,13 @@ from hashlib import md5
 from hashlib import sha1
 from hashlib import sha256
 import os
+from queue import Empty
+from queue import Queue
 import stat
+from threading import Thread
+from threading import current_thread
 from typing import Dict
+from typing import List
 from typing import Optional
 from typing import Sequence
 from typing import Set
@@ -14,6 +19,7 @@ from typing import Set
 from xarg import commands
 
 from .definer import DEFAULT_DIR
+from .definer import THDNUM_BAKSCAN
 
 
 class backup_scanner:
@@ -121,68 +127,100 @@ class backup_scanner:
         return iter(self.__objects.values())
 
     def __load(self):
+        cmds = commands()
         current = os.getcwd()
         os.chdir(self.__start)
 
-        def scan(paths: Set[str]) -> Dict[str, backup_scanner.object]:
-            cmds = commands()
+        def rpath(path: str) -> str:
+            assert isinstance(path, str)
+            return os.path.relpath(path)
 
-            def rpath(path: str) -> str:
-                assert isinstance(path, str)
-                return os.path.relpath(path)
+        # filter files and directorys, such as: ".xbackup"
+        def filter() -> Set[str]:
+            filter_paths = {rpath(DEFAULT_DIR)}
 
-            # filter files and directorys, such as: ".xbackup"
-            def filter() -> Set[str]:
-                filter_paths = {rpath(DEFAULT_DIR)}
+            for path in self.__exclude:
+                filter_paths.add(rpath(path))
 
-                for path in self.__exclude:
-                    filter_paths.add(rpath(path))
+            return filter_paths
 
-                return filter_paths
+        class task_stat:
 
-            filter_paths: Set[str] = filter()
-            objects: Dict[str, backup_scanner.object] = {}
+            def __init__(self):
+                self.exit = False
+                self.q_obj = Queue()
+                self.q_path = Queue()
+                self.filter = filter()
+                self.objects: Dict[str, backup_scanner.object] = {}
 
-            def add(path: str) -> bool:
+        scan_stat = task_stat()
+
+        def task_scan_path():
+            name = current_thread().name
+            cmds.logger.debug(f"Task scan thread[{name}] start.")
+            while not scan_stat.exit:
+                try:
+                    path = scan_stat.q_path.get(timeout=0.01)
+                except Empty:
+                    continue
+
                 path = rpath(path)
                 assert isinstance(path, str)
-                if path not in filter_paths:
-                    obj = backup_scanner.object(path, self.start)
-                    cmds.logger.debug(f"Scan {obj.relpath}")
-                    objects[path] = obj
-                    return True
-                else:
-                    return False
 
-            for path in paths:
-                assert isinstance(path, str)
-                if os.path.isdir(path):
-                    if os.path.islink(path):
-                        add(path)
-                        continue
+                if path in scan_stat.filter or not os.path.exists(path):
+                    cmds.logger.debug(f"Scan filter {path}.")
+                    scan_stat.q_path.task_done()
+                    continue
 
-                    for root, dirs, files in os.walk(path, followlinks=True):
-                        for filename in files:
-                            # TODO: auto add link file
-                            add(os.path.join(root, filename))
+                if os.path.isdir(path) and not os.path.islink(path):
+                    cmds.logger.debug(f"Scan {path}.")
+                    for sub in os.listdir(path=path):
+                        spath = os.path.join(path, sub)
+                        scan_stat.q_path.put(spath)
 
-                        for dirname in [dir for dir in dirs]:
-                            dirpath = os.path.join(root, dirname)
+                    scan_stat.q_path.task_done()
+                    continue
 
-                            if rpath(dirpath) in filter_paths:
-                                dirs.remove(dirname)
-                                continue
+                obj = backup_scanner.object(path=path, start=self.start)
+                scan_stat.q_obj.put(obj)
+                scan_stat.q_path.task_done()
+            cmds.logger.debug(f"Task scan thread[{name}] exit.")
 
-                            # create backup object for directory symbolic link
-                            # otherwise find every object under subdirectories
-                            if os.path.islink(dirpath):
-                                dirs.remove(dirname)
-                                add(dirpath)
-                else:
-                    add(path)
-            return objects
+        def task_scan():
+            name = current_thread().name
+            cmds.logger.debug(f"Task scan thread[{name}] start.")
+            while not scan_stat.exit:
+                try:
+                    object = scan_stat.q_obj.get(timeout=0.01)
+                except Empty:
+                    continue
 
-        self.__objects = scan(self.__paths)
+                assert isinstance(object, backup_scanner.object)
+                cmds.logger.debug(f"Scan {object.relpath}.")
+                scan_stat.objects[object.path] = object
+                scan_stat.q_obj.task_done()
+            cmds.logger.debug(f"Task scan thread[{name}] exit.")
+
+        task_threads: List[Thread] = []
+        task_threads.append(Thread(target=task_scan, name="xbak-scan"))
+        task_threads.extend([
+            Thread(target=task_scan_path, name=f"xbak-scan{i}")
+            for i in range(THDNUM_BAKSCAN)
+        ])
+
+        for thread in task_threads:
+            thread.start()
+
+        for path in self.__paths:
+            scan_stat.q_path.put(path)
+
+        scan_stat.q_path.join()
+        scan_stat.exit = True
+
+        for thread in task_threads:
+            thread.join()
+
+        self.__objects = scan_stat.objects
         os.chdir(current)
 
     @property
