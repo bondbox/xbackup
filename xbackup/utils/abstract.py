@@ -108,13 +108,15 @@ class backup_description:
             self.timestamp.finish.strftime("%Y-%m-%d %a %X.%f"),
         }
         counter = strdata[self.CHKLIST][self.COUNTER]
-        size = counter[backup_check_list.item_counter.SIZE]
-        counter[backup_check_list.item_counter.SIZE] = "{0}({1})".format(
-            size, naturalsize(size, gnu=True))
+        for key, value in counter.items():
+            if key == backup_check_list.item_counter.SIZE:
+                counter[key] = f"{value:,} ({naturalsize(value, gnu=True)})"
+            elif isinstance(value, int) and value >= 1000:
+                counter[key] = f"{value:,}"
         size = os.stat(self.filepath).st_size
         strdata["package"] = {
             "path": self.filepath,
-            "size": "{0}({1})".format(size, naturalsize(size, gnu=True)),
+            "size": f"{size:,} ({naturalsize(size, gnu=True)})",
         }
         return yaml.dump(strdata, default_flow_style=False,
                          sort_keys=False).strip()
