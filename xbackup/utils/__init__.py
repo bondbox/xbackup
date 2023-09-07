@@ -88,6 +88,7 @@ def backup_pack(scanner: backup_scanner,
                           object: backup_scanner.object) -> bool:
             assert isinstance(desc, backup_description)
             assert isinstance(object, backup_scanner.object)
+            assert not (object.isdir and not object.islink)
 
             def copy_file(source: str, item: backup_check_item) -> bool:
                 assert isinstance(source, str)
@@ -160,7 +161,8 @@ def backup_pack(scanner: backup_scanner,
                             break
                         time.sleep(0.1)
                     except Exception as e:
-                        cmds.logger.error(e)
+                        cmds.logger.error(
+                            f"Prepare {object.relpath} error: {e}.")
                 backup_stat.q_obj.task_done()
             cmds.logger.debug(f"Task prepare thread[{name}] exit.")
 

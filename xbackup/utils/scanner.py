@@ -63,6 +63,10 @@ class backup_scanner:
             return os.stat(self.abspath)
 
         @property
+        def lstat(self) -> os.stat_result:
+            return os.lstat(self.abspath)
+
+        @property
         def size(self) -> int:
             return self.stat.st_size
 
@@ -80,7 +84,7 @@ class backup_scanner:
 
         @property
         def islink(self) -> bool:
-            return stat.S_ISLNK(self.stat.st_mode)
+            return stat.S_ISLNK(self.lstat.st_mode)
 
         @property
         def issym(self) -> bool:
