@@ -73,6 +73,16 @@ def backup_pack(scanner: backup_scanner,
         cmds.logger.info(f"Create a temp backup file: {backup_temp.path}, "
                          f"compress type: {comptype}.")
 
+        class task_stat:
+
+            def __init__(self):
+                self.exit = False
+                self.backup_queue = Queue()
+                self.object_queue = Queue()
+
+        backup_stat = task_stat()
+        desc = backup_description(backup_temp.path)
+
         def backup_object(desc: backup_description,
                           object: backup_scanner.object) -> bool:
             assert isinstance(desc, backup_description)
@@ -91,7 +101,7 @@ def backup_pack(scanner: backup_scanner,
                 md5 = calculate_md5(temppath)
                 if md5 != item.md5:
                     return False
-                backup_queue.put((temppath, item, True))
+                backup_stat.backup_queue.put((temppath, item, True))
                 return True
 
             item = backup_check_item(name=object.relpath,
@@ -107,23 +117,18 @@ def backup_pack(scanner: backup_scanner,
                 if copy_file(source=object.abspath, item=item) is not True:
                     return False
             else:
-                backup_queue.put((object.abspath, item, False))
+                backup_stat.backup_queue.put((object.abspath, item, False))
 
             return True
-
-        backup_exit = False
-        backup_queue = Queue()
-        object_queue = Queue()
-        desc = backup_description(backup_temp.path)
 
         def task_archive():
             name = current_thread().name
             cmds.logger.debug(f"Task archive thread[{name}] start.")
-            while not backup_exit:
-                if backup_queue.empty():
+            while not backup_stat.exit:
+                if backup_stat.backup_queue.empty():
                     time.sleep(0.01)
                     continue
-                path, item, delete = backup_queue.get()
+                path, item, delete = backup_stat.backup_queue.get()
                 assert isinstance(path, str)
                 assert isinstance(item, backup_check_item)
                 assert isinstance(delete, bool)
@@ -132,17 +137,17 @@ def backup_pack(scanner: backup_scanner,
                 desc.checklist.add(item)
                 if delete:
                     os.remove(path=path)
-                backup_queue.task_done()
+                backup_stat.backup_queue.task_done()
             cmds.logger.debug(f"Task archive thread[{name}] exit.")
 
         def task_prepare():
             name = current_thread().name
             cmds.logger.debug(f"Task prepare thread[{name}] start.")
-            while not backup_exit:
-                if object_queue.empty():
+            while not backup_stat.exit:
+                if backup_stat.object_queue.empty():
                     time.sleep(0.01 * THDNUM_BAKPREP)
                     continue
-                object = object_queue.get()
+                object = backup_stat.object_queue.get()
                 assert isinstance(object, backup_scanner.object)
                 cmds.logger.debug(f"Prepare {object.relpath}.")
                 while True:
@@ -152,7 +157,7 @@ def backup_pack(scanner: backup_scanner,
                         time.sleep(0.1)
                     except Exception as e:
                         cmds.logger.error(e)
-                object_queue.task_done()
+                backup_stat.object_queue.task_done()
             cmds.logger.debug(f"Task prepare thread[{name}] exit.")
 
         # archive backup object
@@ -167,12 +172,12 @@ def backup_pack(scanner: backup_scanner,
             thread.start()
 
         for object in scanner:
-            object_queue.put(object)
+            backup_stat.object_queue.put(object)
 
-        object_queue.join()
-        backup_queue.join()
+        backup_stat.object_queue.join()
+        backup_stat.backup_queue.join()
 
-        backup_exit = True
+        backup_stat.exit = True
         for thread in task_threads:
             thread.join()
 
