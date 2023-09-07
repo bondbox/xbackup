@@ -5,11 +5,11 @@ import enum
 import hashlib
 import os
 import pickle
+from queue import Empty
 from queue import Queue
 from tempfile import TemporaryDirectory
 from threading import Thread
 from threading import current_thread
-import time
 from typing import Dict
 from typing import IO
 from typing import List
@@ -364,18 +364,18 @@ def backup_check_pack(tarfile: backup_tarfile, fast: bool = False) -> bool:
                 def __init__(self):
                     self.fail = False
                     self.exit = False
-                    self.queue = Queue()
+                    self.q_item = Queue()
 
             check_stat = task_stat()
 
             def check_error():
                 cmds.logger.debug("Check waiting error exit.")
                 check_stat.fail = True
-                while not check_stat.queue.empty():
+                while not check_stat.q_item.empty():
                     try:
-                        check_stat.queue.get(timeout=0.1)
-                        check_stat.queue.task_done()
-                    except Exception:
+                        check_stat.q_item.get(timeout=0.1)
+                        check_stat.q_item.task_done()
+                    except Empty:
                         cmds.logger.debug("Check queue empty.")
                         pass
                 assert check_stat.fail is True
@@ -385,15 +385,17 @@ def backup_check_pack(tarfile: backup_tarfile, fast: bool = False) -> bool:
                 name = current_thread().name
                 cmds.logger.debug(f"Task check thread[{name}] start.")
                 while not check_stat.exit and not check_stat.fail:
-                    if check_stat.queue.empty():
-                        time.sleep(0.01 * THDNUM_BAKCHK)
+                    try:
+                        item = check_stat.q_item.get(timeout=0.01 *
+                                                     THDNUM_BAKCHK)
+                    except Empty:
                         continue
-                    item = check_stat.queue.get()
+
                     assert isinstance(item, backup_check_item)
                     if check_item(item=item, tarfile=tarfile,
                                   fast=True) is not True:
                         check_error()
-                    check_stat.queue.task_done()
+                    check_stat.q_item.task_done()
                 cmds.logger.debug(f"Task check thread[{name}] exit.")
 
             def task_check():
@@ -414,10 +416,10 @@ def backup_check_pack(tarfile: backup_tarfile, fast: bool = False) -> bool:
                         if check_item(item=item, tarfile=tarfile) is not True:
                             check_error()
 
-                    check_stat.queue.put(item)
+                    check_stat.q_item.put(item)
 
                 if not check_stat.fail:
-                    check_stat.queue.join()
+                    check_stat.q_item.join()
                 check_stat.exit = True
                 assert check_stat.exit is True
                 cmds.logger.debug(f"Task check thread[{name}] exit.")
