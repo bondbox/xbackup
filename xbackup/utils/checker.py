@@ -1,15 +1,18 @@
 #!/usr/bin/python3
 # coding:utf-8
 
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import as_completed
 import enum
 import hashlib
 import os
 import pickle
+from queue import Queue
 from tempfile import TemporaryDirectory
+from threading import Thread
+from threading import current_thread
+import time
 from typing import Dict
 from typing import IO
+from typing import List
 from typing import Optional
 from typing import Sequence
 from typing import Set
@@ -17,7 +20,7 @@ from typing import Tuple
 
 from xarg import commands
 
-from .definer import MAX_WORKERS
+from .definer import THDNUM_BAKCHK
 from .package import backup_tarfile
 
 
@@ -253,11 +256,16 @@ def backup_check_pack(tarfile: backup_tarfile, fast: bool = False) -> bool:
     with TemporaryDirectory(dir=None) as tempdir:
 
         def check_file(item: backup_check_item,
-                       tarfile: backup_tarfile) -> bool:
+                       tarfile: backup_tarfile,
+                       fast: bool = False) -> bool:
             assert isinstance(item, backup_check_item)
             assert isinstance(tarfile, backup_tarfile)
+            assert isinstance(fast, bool)
 
-            def file_md5(name: str, fast: bool = False) -> Optional[str]:
+            def file_md5(name: str,
+                         tarfile: backup_tarfile,
+                         fast: bool = False) -> Optional[str]:
+
                 if not fast:
                     tarf = tarfile.wrap.extractfile(name)
                     if not tarf:
@@ -281,7 +289,7 @@ def backup_check_pack(tarfile: backup_tarfile, fast: bool = False) -> bool:
                     md5 = calculate_md5(path=path)
                     return md5
 
-            md5 = file_md5(name=item.name, fast=fast)
+            md5 = file_md5(name=item.name, tarfile=tarfile, fast=fast)
             if md5 == item.md5:
                 return True
 
@@ -290,10 +298,12 @@ def backup_check_pack(tarfile: backup_tarfile, fast: bool = False) -> bool:
             return False
 
         def check_item(item: backup_check_item,
-                       tarfile: backup_tarfile) -> bool:
+                       tarfile: backup_tarfile,
+                       fast: bool = False) -> bool:
             assert isinstance(item, backup_check_item)
             assert isinstance(tarfile, backup_tarfile)
             member = tarfile.wrap.getmember(item.name)
+            assert isinstance(fast, bool)
 
             if member.isdir() and item.isdir != member.isdir():
                 cmds.logger.error(f"Check {item.name} isdir failed.")
@@ -304,7 +314,8 @@ def backup_check_pack(tarfile: backup_tarfile, fast: bool = False) -> bool:
                     cmds.logger.error(f"Check {item.name} isfile failed.")
                     return False
 
-                if check_file(item=item, tarfile=tarfile) is not True:
+                if not member.issym() and check_file(
+                        item=item, tarfile=tarfile, fast=fast) is not True:
                     cmds.logger.error(f"Check {item.name} file md5 failed.")
                     return False
 
@@ -342,22 +353,88 @@ def backup_check_pack(tarfile: backup_tarfile, fast: bool = False) -> bool:
 
         def check_main() -> bool:
             for item in chklist:
-                if check_item(item, tarfile) is not True:
+                if check_item(item=item, tarfile=tarfile) is not True:
                     return False
             return True
 
         def check_fast() -> bool:
-            tarfile.wrap.extractall(tempdir,
-                                    [m for m in tarfile.members if m.isreg])
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS,
-                                    thread_name_prefix="xbak-chk") as pool:
-                futures = [
-                    pool.submit(check_item, item=item, tarfile=tarfile)
-                    for item in chklist
+
+            class task_stat:
+
+                def __init__(self):
+                    self.fail = False
+                    self.exit = False
+                    self.queue = Queue()
+
+            check_stat = task_stat()
+
+            def check_error():
+                cmds.logger.debug("Check waiting error exit.")
+                check_stat.fail = True
+                while not check_stat.queue.empty():
+                    try:
+                        check_stat.queue.get(timeout=0.1)
+                        check_stat.queue.task_done()
+                    except Exception:
+                        cmds.logger.debug("Check queue empty.")
+                        pass
+                assert check_stat.fail is True
+                cmds.logger.debug("Check error exit.")
+
+            def task_check_item():
+                name = current_thread().name
+                cmds.logger.debug(f"Task check thread[{name}] start.")
+                while not check_stat.exit and not check_stat.fail:
+                    if check_stat.queue.empty():
+                        time.sleep(0.01 * THDNUM_BAKCHK)
+                        continue
+                    item = check_stat.queue.get()
+                    assert isinstance(item, backup_check_item)
+                    if check_item(item=item, tarfile=tarfile,
+                                  fast=True) is not True:
+                        check_error()
+                    check_stat.queue.task_done()
+                cmds.logger.debug(f"Task check thread[{name}] exit.")
+
+            def task_check():
+                name = current_thread().name
+                cmds.logger.debug(f"Task check thread[{name}] start.")
+
+                members = [
+                    m for m in tarfile.members
+                    if m.isreg() and not m.issym() and m.name[:2] != ".."
                 ]
-                for future in as_completed(futures):
-                    if future.result() is not True:
-                        return False
-                return True
+                tarfile.wrap.extractall(path=tempdir, members=members)
+
+                for item in chklist:
+                    if check_stat.fail:
+                        break
+
+                    if item.isfile and item.name[:2] == "..":
+                        if check_item(item=item, tarfile=tarfile) is not True:
+                            check_error()
+
+                    check_stat.queue.put(item)
+
+                if not check_stat.fail:
+                    check_stat.queue.join()
+                check_stat.exit = True
+                assert check_stat.exit is True
+                cmds.logger.debug(f"Task check thread[{name}] exit.")
+
+            task_threads: List[Thread] = []
+            task_threads.append(Thread(target=task_check, name="xbak-check"))
+            task_threads.extend([
+                Thread(target=task_check_item, name=f"xbak-chk{i}")
+                for i in range(THDNUM_BAKCHK)
+            ])
+
+            for thread in task_threads:
+                thread.start()
+
+            for thread in task_threads:
+                thread.join()
+
+            return not check_stat.fail
 
         return check_main() if not fast else check_fast()
