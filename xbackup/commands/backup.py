@@ -3,10 +3,10 @@
 
 from datetime import datetime
 from errno import EEXIST
+from errno import EIO
 from errno import ENOENT
 from errno import ENOEXEC
 import os
-import tempfile
 from typing import Optional
 from typing import Sequence
 
@@ -110,12 +110,20 @@ def run_cmd(cmds: commands) -> int:
         cmds.logger.error(f"The backup file {backup_path} already exists.")
         return EEXIST
 
-    start = cmds.args._backup_work_directory_
-    paths = cmds.args._backup_paths_
-    exclude = cmds.args._backup_exclude_
-    check = not cmds.args._backup_check_off_
-    scanner = backup_scanner(start, paths, exclude)
-    return backup_pack(scanner, backup_path, comptype, check)
+    error = EIO
+    try:
+        start = cmds.args._backup_work_directory_
+        paths = cmds.args._backup_paths_
+        exclude = cmds.args._backup_exclude_
+        check = not cmds.args._backup_check_off_
+        scanner = backup_scanner(start, paths, exclude)
+        error = backup_pack(scanner, backup_path, comptype, check)
+    except BaseException:
+        cmds.logger.exception("Something went wrong with the backup:")
+    finally:
+        if error and os.path.exists(backup_path):
+            os.remove(path=backup_path)
+        return error
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

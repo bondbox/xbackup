@@ -2,7 +2,6 @@
 # coding:utf-8
 
 from errno import EAGAIN
-from errno import EBUSY
 from errno import ENOENT
 import os
 from queue import Empty
@@ -68,10 +67,11 @@ def backup_pack(scanner: backup_scanner,
     # create temp file
     with TemporaryDirectory(dir=None) as tempdir:
         cmds.logger.debug(f"Create the temp directory: {tempdir}.")
-        backup_temp = backup_tarfile(os.path.join(tempdir, "xbackup-temp"),
-                                     False, comptype)
-        assert not backup_temp.readonly
-        cmds.logger.info(f"Create a temp backup file: {backup_temp.path}, "
+        backup_file = backup_tarfile(path=backup_path,
+                                     readonly=False,
+                                     comptype=comptype)
+        assert not backup_file.readonly
+        cmds.logger.info(f"Create a temp backup file: {backup_file.path}, "
                          f"compress type: {comptype}.")
 
         class task_stat:
@@ -82,7 +82,7 @@ def backup_pack(scanner: backup_scanner,
                 self.q_obj = Queue()
 
         backup_stat = task_stat()
-        desc = backup_description(backup_temp.path)
+        desc = backup_description(backup_file.path)
 
         def backup_object(desc: backup_description,
                           object: backup_scanner.object) -> bool:
@@ -136,7 +136,7 @@ def backup_pack(scanner: backup_scanner,
                 assert isinstance(item, backup_check_item)
                 assert isinstance(delete, bool)
                 cmds.logger.debug(f"Archive {item.name}.")
-                backup_temp.wrap.add(name=path, arcname=item.name)
+                backup_file.wrap.add(name=path, arcname=item.name)
                 desc.checklist.add(item)
                 if delete:
                     os.remove(path=path)
@@ -201,21 +201,13 @@ def backup_pack(scanner: backup_scanner,
             tempfd.write(desc.dump())
 
         # archive temp files and close tarfile
-        backup_temp.description = description_path
-        backup_temp.checklist = checklist_path
-        backup_temp.close()
+        backup_file.description = description_path
+        backup_file.checklist = checklist_path
+        backup_file.close()
 
         # check after backup
-        if check and not backup_check(backup_path=backup_temp.path, fast=True):
+        if check and not backup_check(backup_path=backup_file.path, fast=True):
             return EAGAIN
-
-        # move temp file to backup file
-        try:
-            cmds.logger.info(f"Move temp {backup_temp.path} to {backup_path}.")
-            shutil.move(backup_temp.path, backup_path)
-        except Exception as error:
-            cmds.logger.error(f"Exception: {error}.")
-            return EBUSY
 
         cmds.logger.info("Backup is complete.")
         return 0
