@@ -27,13 +27,14 @@ from ..utils import backup_scanner
 @add_command(__prog__)
 def add_cmd(_arg: argp):
     group = _arg.argument_group("backup objects")
-    group.add_argument("-s",
-                       "--start",
-                       type=str,
-                       nargs="?",
-                       metavar="DIR",
-                       dest="_backup_start_directory_",
-                       help="Specify start directory")
+    group.add_argument(
+        "-w",
+        "--work",
+        type=str,
+        nargs="?",
+        metavar="DIR",
+        dest="_backup_work_directory_",
+        help="Specify the work directory, default current directory")
     # action="extend" requires Python >= 3.8
     group.add_argument("--exclude",
                        type=str,
@@ -55,14 +56,15 @@ def add_cmd(_arg: argp):
                        dest="_backup_check_off_",
                        help="Do not check the backup file")
     # Support for temp directory under Linux and Windows
-    group.add_argument("--dir",
-                       type=str,
-                       nargs="?",
-                       const=tempfile.gettempdir(),
-                       default=".",
-                       metavar="DIR",
-                       dest="_backup_file_directory_",
-                       help="Specify the backup directory")
+    group.add_argument(
+        "--dir",
+        type=str,
+        nargs="?",
+        const=".",
+        default=".",
+        metavar="DIR",
+        dest="_backup_file_directory_",
+        help="Specify the backup directory, default current directory")
     group.add_argument("--name",
                        type=str,
                        nargs="?",
@@ -108,7 +110,7 @@ def run_cmd(cmds: commands) -> int:
         cmds.logger.error(f"The backup file {backup_path} already exists.")
         return EEXIST
 
-    start = cmds.args._backup_start_directory_
+    start = cmds.args._backup_work_directory_
     paths = cmds.args._backup_paths_
     exclude = cmds.args._backup_exclude_
     check = not cmds.args._backup_check_off_
@@ -119,9 +121,8 @@ def run_cmd(cmds: commands) -> int:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     cmds = commands()
     cmds.version = __version__
-    return cmds.run(
-        root=add_cmd,
-        argv=argv,
-        prog=__prog__,
-        description="Create backup.",
-        epilog=f"For more, please visit {URL_PROG}.")
+    return cmds.run(root=add_cmd,
+                    argv=argv,
+                    prog=__prog__,
+                    description="Create backup.",
+                    epilog=f"For more, please visit {URL_PROG}.")
